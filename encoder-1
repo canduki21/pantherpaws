@@ -1,0 +1,133 @@
+#include <SoftwareSerial.h>// Motor A
+const int ENA = 9;
+const int IN1 = 8;
+const int IN2 = 7;
+const int encoderPin1 = 3;
+
+// Motor B
+const int ENB = 10;
+const int IN3 = 11;
+const int IN4 = 12;
+const int encoderPin2 = 2;
+
+// PID variables
+// PID parameters
+float kp = 0.6;
+float ki = 0.3;
+float kd = 0.3;
+float setpoint = 200;
+
+
+float error1 = 0, prevError1 = 0, integral1 = 0;
+float error2 = 0, prevError2 = 0, integral2 = 0;
+
+// Speed tracking
+volatile int pulses1 = 0;
+volatile int pulses2 = 0;
+
+unsigned long lastTime = 0;
+const int encoderPPR = 500;  // Adjust for your encoder
+
+char data;
+
+void setup() {
+  Serial.begin(9600);
+
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+
+  pinMode(ENB, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+
+  pinMode(encoderPin1, INPUT_PULLUP);
+  pinMode(encoderPin2, INPUT_PULLUP);
+
+  attachInterrupt(digitalPinToInterrupt(encoderPin1), countPulses1, RISING);
+  attachInterrupt(digitalPinToInterrupt(encoderPin2), countPulses2, RISING);
+
+  stopMotors();
+  lastTime = millis();
+}
+
+void loop() {
+  if (Serial.available()) {
+    data = Serial.read();
+
+    if (data == '1') {
+      // Forward
+      digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+      digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+    }
+    else if (data == '2') {
+      // Backward
+      digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
+      digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
+    }
+    else if (data == '0') {
+      stopMotors();
+    }
+  }
+
+  unsigned long now = millis();
+  if (now - lastTime >= 100) {
+    float dt = (now - lastTime) / 1000.0;
+    lastTime = now;
+
+    noInterrupts();
+    int count1 = pulses1; pulses1 = 0;
+    int count2 = pulses2; pulses2 = 0;
+    interrupts();
+
+    float rpm1 = (count1 / (float)encoderPPR) * 60.0 / dt;
+    float rpm2 = (count2 / (float)encoderPPR) * 60.0 / dt;
+
+    // PID for Motor 1
+    error1 = setpoint - rpm1;
+    integral1 += error1 * dt;
+    float derivative1 = (error1 - prevError1) / dt;
+    float output1 = kp * error1 + ki * integral1 + kd * derivative1;
+    prevError1 = error1;
+    int pwm1 = constrain((int)output1 , 0, 100);  // base + correction
+    analogWrite(ENA, pwm1);
+
+    // PID for Motor 2
+    error2 = setpoint - rpm2;
+    integral2 += error2 * dt;
+    float derivative2 = (error2 - prevError2) / dt;
+    float output2 = kp * error2 + ki * integral2 + kd * derivative2;
+    prevError2 = error2;
+    int pwm2 = constrain((int)output2 , 0, 250);
+    analogWrite(ENB, pwm2);
+
+    Serial.print(rpm1); Serial.print("\t");
+    Serial.print(pwm1); Serial.print("\t");
+    Serial.print(rpm2); Serial.print("\t");
+    Serial.println(pwm2);
+  }
+}
+
+void countPulses1() {
+  static unsigned long lastPulse = 0;
+  unsigned long now = micros();
+  if (now - lastPulse > 200) {
+    pulses1++;
+    lastPulse = now;
+  }
+}
+
+void countPulses2() {
+  static unsigned long lastPulse = 0;
+  unsigned long now = micros();
+  if (now - lastPulse > 200) {
+    pulses2++;
+    lastPulse = now;
+  }
+}
+void stopMotors() {
+  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
+  analogWrite(ENA, 0);
+  analogWrite(ENB, 0);
+}
