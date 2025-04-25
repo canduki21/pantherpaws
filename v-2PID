@@ -1,0 +1,129 @@
+// Motor A
+const int ENA = 9;
+const int IN1 = 7;
+const int IN2 = 8;
+const int encoderPin1 = 3;
+
+// Motor B
+const int ENB = 12;
+const int IN3 = 11;
+const int IN4 = 10;
+const int encoderPin2 = 2;
+
+// Encoder pulses
+volatile int pulseCount1 = 0;
+volatile int pulseCount2 = 0;
+
+unsigned long lastTime = 0;
+const unsigned long intervalMs = 100;  // Sampling every 100 ms
+const int encoderPPR = 800;             // Pulses per revolution (set to your encoder's spec)
+
+float rpm1 = 0, rpm2 = 0;
+float targetRPM = 100;
+
+// PID parameters
+float kp = 2.5;
+float ki = 0.5;
+float kd = 0.1;
+
+float prevError1 = 0, sumError1 = 0;
+float prevError2 = 0, sumError2 = 0;
+
+int pwmValue1 = 0;
+int pwmValue2 = 0;
+
+void setup() {
+  // Motor pins
+  pinMode(ENA, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(ENB, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+
+  // Encoder pins
+  pinMode(encoderPin1, INPUT_PULLUP);
+  pinMode(encoderPin2, INPUT_PULLUP);
+
+  // Start both motors forward
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+
+  // Attach interrupts
+  attachInterrupt(digitalPinToInterrupt(encoderPin1), countPulse1, RISING);
+  attachInterrupt(digitalPinToInterrupt(encoderPin2), countPulse2, RISING);
+
+  Serial.begin(9600);
+  Serial.println("PWM1\tRPM1\tPWM2\tRPM2");
+  lastTime = millis();
+}
+
+void loop() {
+  unsigned long now = millis();
+
+  if (now - lastTime >= intervalMs) {
+    float intervalSec = (now - lastTime) / 1000.0;
+    lastTime = now;
+
+    noInterrupts();
+    int pulses1 = pulseCount1;
+    int pulses2 = pulseCount2;
+    pulseCount1 = 0;
+    pulseCount2 = 0;
+    interrupts();
+
+    rpm1 = (pulses1 / intervalSec) * (60.0 / encoderPPR);
+    rpm2 = (pulses2 / intervalSec) * (60.0 / encoderPPR);
+
+    // --- PID for Motor 1 ---
+    float error1 = targetRPM - rpm1;
+    sumError1 += error1 * intervalSec;
+    sumError1 = constrain(sumError1, -100, 100);
+    float dError1 = (error1 - prevError1) / intervalSec;
+    float output1 = kp * error1 + ki * sumError1 + kd * dError1;
+    prevError1 = error1;
+
+    pwmValue1 = constrain(pwmValue1 + output1, 0, 100);
+    analogWrite(ENA, pwmValue1);
+
+    // --- PID for Motor 2 ---
+    float error2 = targetRPM - rpm2;
+    sumError2 += error2 * intervalSec;
+    sumError2 = constrain(sumError2, -100, 100);
+    float dError2 = (error2 - prevError2) / intervalSec;
+    float output2 = kp * error2 + ki * sumError2 + kd * dError2;
+    prevError2 = error2;
+
+    pwmValue2 = constrain(pwmValue2 + output2, 0, 100);
+    analogWrite(ENB, pwmValue2);
+
+    // Print to Serial Plotter
+    Serial.print(pwmValue1);
+    Serial.print("\t");
+    Serial.print(rpm1);
+    Serial.print("\t");
+    Serial.print(pwmValue2);
+    Serial.print("\t");
+    Serial.println(rpm2);
+  }
+}
+
+void countPulse1() {
+  static unsigned long lastPulse = 0;
+  unsigned long now = micros();
+  if (now - lastPulse > 200) {
+    pulseCount1++;
+    lastPulse = now;
+  }
+}
+
+void countPulse2() {
+  static unsigned long lastPulse = 0;
+  unsigned long now = micros();
+  if (now - lastPulse > 200) {
+    pulseCount2++;
+    lastPulse = now;
+  }
+}
