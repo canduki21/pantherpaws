@@ -141,7 +141,7 @@ void loop() {
         analogWrite(ENA, pwmValue1);
         analogWrite(ENB, pwmValue2);
 
-        if (turnPulses >= 220) { // Tune this! around 220 pulses = 90 degrees (example)
+        if (turnPulses >= 770) { // Tune this! around 220 pulses = 90 degrees (example)
           currentState = FORWARD;
           sidesCompleted++;
 
