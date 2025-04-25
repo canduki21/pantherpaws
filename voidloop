@@ -1,0 +1,73 @@
+void loop() {
+  unsigned long now = millis();
+
+  // Stop after 30 seconds, pause, then continue
+  if (now - startTime >= runTimeLimit) {
+    analogWrite(ENA, 0);
+    analogWrite(ENB, 0);
+    Serial.println("Stopped after 30 seconds. Pausing...");
+
+    delay(2000); // Pause for 2 seconds
+
+    // Restart timing and control
+    startTime = millis();
+    lastTime = millis();
+    sumError1 = sumError2 = 0;
+    prevError1 = prevError2 = 0;
+    pwmValue1 = pwmValue2 = 0;
+
+    // Resume forward motion
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    digitalWrite(IN3, HIGH);
+    digitalWrite(IN4, LOW);
+
+    Serial.println("Resuming movement...");
+  }
+
+  if (now - lastTime >= intervalMs) {
+    float intervalSec = (now - lastTime) / 1000.0;
+    lastTime = now;
+
+    noInterrupts();
+    int pulses1 = pulseCount1;
+    int pulses2 = pulseCount2;
+    pulseCount1 = 0;
+    pulseCount2 = 0;
+    interrupts();
+
+    rpm1 = (pulses1 / intervalSec) * (60.0 / encoderPPR);
+    rpm2 = (pulses2 / intervalSec) * (60.0 / encoderPPR);
+
+    // PID for Motor 1
+    float error1 = targetRPM - rpm1;
+    sumError1 += error1 * intervalSec;
+    sumError1 = constrain(sumError1, -100, 100);
+    float dError1 = (error1 - prevError1) / intervalSec;
+    float output1 = kp * error1 + ki * sumError1 + kd * dError1;
+    prevError1 = error1;
+
+    pwmValue1 = constrain(pwmValue1 + output1, 0, 100);
+    analogWrite(ENA, pwmValue1);
+
+    // PID for Motor 2
+    float error2 = targetRPM - rpm2;
+    sumError2 += error2 * intervalSec;
+    sumError2 = constrain(sumError2, -100, 100);
+    float dError2 = (error2 - prevError2) / intervalSec;
+    float output2 = kp * error2 + ki * sumError2 + kd * dError2;
+    prevError2 = error2;
+
+    pwmValue2 = constrain(pwmValue2 + output2, 0, 100);
+    analogWrite(ENB, pwmValue2);
+
+    // Print for Serial Plotter
+    Serial.print(pwmValue1);
+    Serial.print("\t");
+    Serial.print(rpm1);
+    Serial.print("\t");
+    Serial.print(pwmValue2);
+    Serial.print("\t");
+    Serial.println(rpm2);
+  }
+}
